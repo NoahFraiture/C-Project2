@@ -2,6 +2,8 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <string.h>
+#include <stdlib.h>
+#include <math.h>
 
 /**
  * Checks whether the archive is valid.
@@ -20,22 +22,28 @@
  */
 int check_archive(int tar_fd) {
     char buffer[512];
-    uint16_t size;
+    int nb_blocs;
+    char *size_name;
     uint8_t checksum;
 
     int done = 0;
     while (!done){
         read(tar_fd, buffer, 512);
-        if (strcmp(&buffer[267], "ustar") != 0){ return -1; }
-        if (buffer[263] != "0" || buffer[263] != "0"){ return -2; }
-        // checksum (à récupérer en-dehors de la boucle et à vérifier à la fin ?)
+        if (strcmp(&buffer[267], "ustar\0") != 0){ return -1; } // check magic value
+        if (buffer[263] != '0' || buffer[263] != '0'){ return -2; } // check version value
+            
+        // Test d'un tar avec un fichier vide :
+        // Somme des bytes du header : 4836
+        // Somme bytes checksum : 301
+        // Checksum en octal :  4759
+        // ça colle pas et jsp pourquoi
         checksum = *(uint8_t*)(&buffer[148]);
 
-        // Get size
-        size = *(off_t*)(&buffer[124]);
-        size >> 4;
-        lseek(tar_fd, (off_t)size*512, SEEK_CUR);
-
+        // Get numbers of text blocks 
+        // Need to be compile with -lm to works. Need investigation
+        size_name = &buffer[124];
+        nb_blocs = ceil(strtol(size_name, NULL, 8) / 512.);
+        lseek(tar_fd, (off_t) nb_blocs * 512, SEEK_CUR);
     }
 
     return 0;
@@ -139,4 +147,9 @@ int list(int tar_fd, char *path, char **entries, size_t *no_entries) {
  */
 ssize_t read_file(int tar_fd, char *path, size_t offset, uint8_t *dest, size_t *len) {
     return 0;
+}
+
+int main() {
+    double a = (long) 513 / 512.;
+    printf("%f\n", ceil(a));
 }
