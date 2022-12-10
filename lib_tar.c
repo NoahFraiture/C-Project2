@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <math.h>
 #include <fcntl.h>
+#include <dirent.h>
 
 /**
  * Checks whether the archive is valid.
@@ -80,16 +81,20 @@ int exists(int tar_fd, char *path) {
         if (err == -1) {printf("Error with path reading"); return -1;}
         if (!err) {break;}
         size++;
-        // hash function from buffer -> hash
+        // hash_path += hash(buffer)
     }
 
-    int hash_tar = 0
+    int current_hash = 0;
+    int hash_per_bloc[size];
+    int index = 0;
     while (1) {
         err = read(tar_fd, buffer, 512);
         if (err == -1) {printf("Error with tar reading"); return -1;}
-        if (!err) {break;}
-        // hash_tar = tar_fd[i:i+size*512]
-        // if hash_tar == hash_path: return 1
+        if (!err) {break;};
+        index = (index+1) % size;
+        // hash_per_bloc[index] = hash(buffer);
+        // current_hash = actualize_hash(hash_per_bloc);
+        // if current_hash == hash_path: return 1
     }
     system("rm temp.tar");
     return 0;
@@ -105,7 +110,8 @@ int exists(int tar_fd, char *path) {
  *         any other value otherwise.
  */
 int is_dir(int tar_fd, char *path) {
-    return 0;
+    DIR *dir = opendir(path);
+    return exists(tar_fd, path) & dir;
 }
 
 /**
@@ -118,7 +124,7 @@ int is_dir(int tar_fd, char *path) {
  *         any other value otherwise.
  */
 int is_file(int tar_fd, char *path) {
-    return 0;
+    return (exists(tar_fd, path) == 1) & (access(path, F_OK) == 0)
 }
 
 /**
@@ -130,7 +136,7 @@ int is_file(int tar_fd, char *path) {
  *         any other value otherwise.
  */
 int is_symlink(int tar_fd, char *path) {
-    return 0;
+    return 0; // little adaptation of exists()
 }
 
 
@@ -180,10 +186,4 @@ int list(int tar_fd, char *path, char **entries, size_t *no_entries) {
  */
 ssize_t read_file(int tar_fd, char *path, size_t offset, uint8_t *dest, size_t *len) {
     return 0;
-}
-
-int main() {
-    char *name = "lib_tar.h";
-    char *command = "tar -cvf test_tar.tar lib_tar.h";
-    system(command);
 }
