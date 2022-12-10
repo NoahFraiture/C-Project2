@@ -4,6 +4,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <math.h>
+#include <fcntl.h>
 
 /**
  * Checks whether the archive is valid.
@@ -22,13 +23,19 @@
  */
 int check_archive(int tar_fd) {
     char buffer[512];
-    int nb_blocs;
-    char *size_name;
+    int nb_headers = 0;
+    int err;
     uint8_t checksum;
 
-    int done = 0;
-    while (!done){
-        read(tar_fd, buffer, 512);
+    int blocks_skip;
+    char *size_str;
+
+    while (1){
+        err = read(tar_fd, buffer, 512);
+        if (err == -1) { return -4; } // error on reading
+        
+        nb_headers++;
+        if (err == 0) { return nb_headers; } // end of the file
         if (strcmp(&buffer[267], "ustar\0") != 0){ return -1; } // check magic value
         if (buffer[263] != '0' || buffer[263] != '0'){ return -2; } // check version value
             
@@ -41,9 +48,9 @@ int check_archive(int tar_fd) {
 
         // Get numbers of text blocks 
         // Need to be compile with -lm to works. Need investigation
-        size_name = &buffer[124];
-        nb_blocs = ceil(strtol(size_name, NULL, 8) / 512.);
-        lseek(tar_fd, (off_t) nb_blocs * 512, SEEK_CUR);
+        size_str = &buffer[124];
+        blocks_skip = ceil(strtol(size_str, NULL, 8) / 512.);
+        lseek(tar_fd, (off_t) blocks_skip * 512, SEEK_CUR);
     }
 
     return 0;
@@ -59,6 +66,32 @@ int check_archive(int tar_fd) {
  *         any other value otherwise.
  */
 int exists(int tar_fd, char *path) {
+    char *command = "tar -cvf temp.tar ";
+    strcat(command, path);
+    system(command);
+
+    int fd = open("temp.tar", O_RDONLY);
+    char buffer[512];
+    int size = 0;
+    int hash_path = 0;
+    int err;
+    while (1) {
+        err = read(fd, buffer, 512);
+        if (err == -1) {printf("Error with path reading"); return -1;}
+        if (!err) {break;}
+        size++;
+        // hash function from buffer -> hash
+    }
+
+    int hash_tar = 0
+    while (1) {
+        err = read(tar_fd, buffer, 512);
+        if (err == -1) {printf("Error with tar reading"); return -1;}
+        if (!err) {break;}
+        // hash_tar = tar_fd[i:i+size*512]
+        // if hash_tar == hash_path: return 1
+    }
+    system("rm temp.tar");
     return 0;
 }
 
@@ -150,6 +183,7 @@ ssize_t read_file(int tar_fd, char *path, size_t offset, uint8_t *dest, size_t *
 }
 
 int main() {
-    double a = (long) 513 / 512.;
-    printf("%f\n", ceil(a));
+    char *name = "lib_tar.h";
+    char *command = "tar -cvf test_tar.tar lib_tar.h";
+    system(command);
 }
