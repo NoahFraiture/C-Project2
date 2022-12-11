@@ -36,8 +36,10 @@ int main(int argc, char **argv) {
         return -1;
     }
 
-    int ret = check_archive(fd);
-    printf("check_archive returned %d\n", ret);
+    //int ret = check_archive(fd);
+    //printf("check_archive returned %d\n", ret);
+    int res = exists(fd, "Makefile");
+    printf("exists returned %d\n", res);
 
     return 0;
 }

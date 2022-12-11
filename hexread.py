@@ -1,12 +1,13 @@
 def sum_byte():
     l = []
-    with open("machin.tar", "rb") as file:
-        while(byte := file.read(1)):
+    index = 0
+    with open("header.tar", "rb") as file:
+        while(byte := file.read(1) ):
             val = int.from_bytes(byte, "little")
             if val != 0:
                 l.append(val)
     print(f"Somme des bytes du header : {sum(l)}")
-    print("Somme bytes checksum : 301")
+    print("Somme bytes checksum : 303")
 
 def octal_int(num:str):
     base = 0
@@ -17,5 +18,6 @@ def octal_int(num:str):
         s += int(b * a)
         base+=1
     return s
+
 sum_byte()
-print("checksum en octal : ", octal_int("11227"))
+print("octal to int : ", octal_int(input("size octal : ")))

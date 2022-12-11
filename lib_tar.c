@@ -57,6 +57,16 @@ int check_archive(int tar_fd) {
     return 0;
 }
 
+unsigned long hash(char *str) { // found on https://stackoverflow.com/questions/7666509/hash-function-for-string
+    int c = str[0];
+    int hash = 0;
+    while (c != '\n') {
+        hash = ((hash << 5) + hash) + c; /* hash * 33 + c */
+        c = *str++;
+    }
+    return hash;
+}
+
 /**
  * Checks whether an entry exists in the archive.
  *
@@ -73,31 +83,28 @@ int exists(int tar_fd, char *path) {
 
     int fd = open("temp.tar", O_RDONLY);
     char buffer[512];
-    int size = 0;
-    int hash_path = 0;
-    int err;
-    while (1) {
-        err = read(fd, buffer, 512);
-        if (err == -1) {printf("Error with path reading"); return -1;}
-        if (!err) {break;}
-        size++;
-        // hash_path += hash(buffer)
-    }
+    unsigned long hash_path = 0;
+    int err = read(fd, buffer, 512);
+    if (err == -1) {printf("Error with path reading"); return -1;}
+    hash_path = hash(buffer);
 
     int current_hash = 0;
-    int hash_per_bloc[size];
-    int index = 0;
-    while (1) {
+    int flag = 0;
+
+    int blocks_skip;
+    char *size_str;
+    while (!flag) {
         err = read(tar_fd, buffer, 512);
         if (err == -1) {printf("Error with tar reading"); return -1;}
-        if (!err) {break;};
-        index = (index+1) % size;
-        // hash_per_bloc[index] = hash(buffer);
-        // current_hash = actualize_hash(hash_per_bloc);
-        // if current_hash == hash_path: return 1
+        current_hash = hash(buffer);
+        if (current_hash == hash_path) { flag = 1; }
+
+        size_str = &buffer[124];
+        blocks_skip = ceil(strtol(size_str, NULL, 8) / 512.);
+        lseek(tar_fd, (off_t) blocks_skip * 512, SEEK_CUR);
     }
     system("rm temp.tar");
-    return 0;
+    return flag;
 }
 
 /**
@@ -111,7 +118,7 @@ int exists(int tar_fd, char *path) {
  */
 int is_dir(int tar_fd, char *path) {
     DIR *dir = opendir(path);
-    return exists(tar_fd, path) & dir;
+    return (exists(tar_fd, path) == 1 && dir) ? 1 : 0;
 }
 
 /**
@@ -124,7 +131,7 @@ int is_dir(int tar_fd, char *path) {
  *         any other value otherwise.
  */
 int is_file(int tar_fd, char *path) {
-    return (exists(tar_fd, path) == 1) & (access(path, F_OK) == 0)
+    return (exists(tar_fd, path) == 1) && (access(path, F_OK) == 0) ? 1 : 0;
 }
 
 /**
@@ -185,5 +192,9 @@ int list(int tar_fd, char *path, char **entries, size_t *no_entries) {
  *
  */
 ssize_t read_file(int tar_fd, char *path, size_t offset, uint8_t *dest, size_t *len) {
+    return 0;
+}
+
+int main() {
     return 0;
 }

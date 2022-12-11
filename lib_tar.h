@@ -58,6 +58,10 @@ typedef struct posix_header
  */
 int check_archive(int tar_fd);
 
+unsigned long hash_add(unsigned long hash, char *str);
+unsigned long hash_remove(unsigned long hash, char *str);
+
+
 /**
  * Checks whether an entry exists in the archive.
  *
