@@ -76,6 +76,7 @@ unsigned long hash(char *str) { // found on https://stackoverflow.com/questions/
  * @return zero if no entry at the given path exists in the archive,
  *         any other value otherwise.
  */
+// contains the full path as name, not only the name of the file. Is it what we want ? 
 int exists(int tar_fd, char *path) {
     char *command = "tar -cvf temp.tar ";
     strcat(command, path);
