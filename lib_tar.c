@@ -7,6 +7,25 @@
 #include <fcntl.h>
 #include <dirent.h>
 
+int ceilC(double val){
+    if (val / (int) val != 1){ val++; }
+    return (int) val;
+}
+
+unsigned long hash(char *str) {
+    char *ptr = &str[0];
+    int hash = 0;
+    for(int i = 0; i < strlen(str); i++) {
+        hash = ((hash << 5) + hash) + *ptr; /* hash * 33 + c */
+        ptr++;
+    }
+    return hash;
+}
+
+void reset(int tar_fd) {
+    lseek(tar_fd, 0, SEEK_SET);
+}
+
 /**
  * Checks whether the archive is valid.
  *
@@ -26,51 +45,38 @@ int check_archive(int tar_fd) {
     char buffer[512];
     int nb_headers = 0;
     int err;
-    uint8_t checksum;
-
+    long checksum_calculated;
+    long checksum_readed;
     int blocks_skip;
-    char *size_str;
+    int i;
 
     while (1){
         err = read(tar_fd, buffer, 512);
-        if (err == -1) { return -4; } // error on reading
-        
-        nb_headers++;
-        if (err == 0) { return nb_headers; } // end of the file
-        if (strcmp(&buffer[267], "ustar\0") != 0){ return -1; } // check magic value
-        if (buffer[263] != '0' || buffer[263] != '0'){ return -2; } // check version value
-            
-        // Test d'un tar avec un fichier vide :
-        // Somme des bytes du header : 4836
-        // Somme bytes checksum : 301
-        // Checksum en octal :  4759
-        // ça colle pas et jsp pourquoi
-        checksum = *(uint8_t*)(&buffer[148]);
+        if (err == -1) { reset(tar_fd); return -4; } // error on reading
+        if (err < 512 && err > -1) { reset(tar_fd); return nb_headers; } // end of the file
+        if (buffer[0] == 0) {reset(tar_fd); return nb_headers;}
+        if (strcmp(&buffer[257], TMAGIC)) {reset(tar_fd); return -1;} // check magic value
+        if (strncmp(&buffer[263], "00", 2)) {reset(tar_fd); return -2;}
 
-        // Get numbers of text blocks 
-        // Need to be compile with -lm to works. Need investigation
-        size_str = &buffer[124];
-        blocks_skip = ceil(strtol(size_str, NULL, 8) / 512.);
+        nb_headers++;
+
+        checksum_calculated = 0;
+        for (i = 0; i < 148; i++) {
+            checksum_calculated += buffer[i];
+        }
+        checksum_calculated +=  8*' ';
+        for (i = 156; i < 512; i++) {
+            checksum_calculated += buffer[i];
+        }
+        checksum_readed = strtol(&buffer[148], NULL, 8);
+        if (checksum_calculated != checksum_readed) {reset(tar_fd); return -3;}
+
+        blocks_skip = ceilC(strtol(&buffer[124], NULL, 8) / 512.);
         lseek(tar_fd, (off_t) blocks_skip * 512, SEEK_CUR);
     }
-
-    return 0;
 }
 
-unsigned long hash(char *str) { // found on https://stackoverflow.com/questions/7666509/hash-function-for-string
-    int c = str[0];
-    int hash = 0;
-    while (c != '\n') {
-        hash = ((hash << 5) + hash) + c; /* hash * 33 + c */
-        c = *str++;
-    }
-    return hash;
-}
 
-int ceilC(double val){
-    if (val / (int) val != 1){ val++; }
-    return (int) val;
-}
 
 /**
  * Checks whether an entry exists in the archive.
@@ -81,37 +87,26 @@ int ceilC(double val){
  * @return zero if no entry at the given path exists in the archive,
  *         any other value otherwise.
  */
-// contains the full path as name, not only the name of the file. Is it what we want ? 
 int exists(int tar_fd, char *path) {
-    char *command = "tar -cvf temp.tar ";
-    strcat(command, path);
-    system(command);
-
-    int fd = open("temp.tar", O_RDONLY);
+    unsigned long path_name = hash(path);
+    unsigned long current_name;
     char buffer[512];
-    unsigned long hash_path = 0;
-    int err = read(fd, buffer, 512);
-    if (err == -1) {printf("Error with path reading"); return -1;}
-    hash_path = hash(buffer);
-
-    int current_hash = 0;
-    int flag = 0;
-
+    int err;
     int blocks_skip;
-    char *size_str;
-    while (!flag) {
-        err = read(tar_fd, buffer, 512);
-        if (err == -1) {printf("Error with tar reading"); return -1;}
-        current_hash = hash(buffer);
-        if (current_hash == hash_path) { flag = 1; }
 
-        size_str = &buffer[124];
-        blocks_skip = ceil(strtol(size_str, NULL, 8) / 512.);
+    while(1) {
+        err = read(tar_fd, buffer, 512);
+        if (err == -1) {reset(tar_fd); return -1; } // error on reading
+        if (buffer[0] == '0') {reset(tar_fd); return 0;}
+        if (err < 512 && err > -1) { reset(tar_fd); return 0; } // end of the file
+
+        current_name = hash(&buffer[0]);
+        if (current_name == path_name) {reset(tar_fd); return 1;}
+        blocks_skip = ceilC(strtol(&buffer[124], NULL, 8) / 512.);
         lseek(tar_fd, (off_t) blocks_skip * 512, SEEK_CUR);
     }
-    system("rm temp.tar");
-    return flag;
 }
+
 
 int check_is(int tar_fd, char *path, int type){
     char buffer[512]; // because it is structured by blocks of 512 bytes !
@@ -119,12 +114,11 @@ int check_is(int tar_fd, char *path, int type){
     int err;
 
     int end = 0;
-    int found;
     while (!end){
         err = read(tar_fd, buffer, 512);
         if (err == 0){ end = 1; }
         
-        if (strcmp(path, buffer[0]) == 0) {
+        if (strcmp(path, &buffer[0]) == 0) {
             if (buffer[156] == type || (type == 0 && buffer[156] == '\0')) { return 1; }
             return 0;
         }
@@ -180,7 +174,7 @@ int is_symlink(int tar_fd, char *path) {
 int isnotsubdir(char *filename){
     int i=0;
     while(filename[i] != '\0'){
-        if (filename[i] == "/"){ return 0; }
+        if (filename[i] == '/'){ return 0; }
         i++;
     }
     return 1;
@@ -215,20 +209,19 @@ int list(int tar_fd, char *path, char **entries, size_t *no_entries) {
 
     int size = strlen(path);
 
-    int count = 0;
     size_t found = 0;
     while (1){
         err = read(tar_fd, buffer, 512);
         if (err == 0){ return 0; }
         
-        if (strcmp(path, buffer[0]) == 0) { found = 1; }
+        if (strcmp(path, &buffer[0]) == 0) { found = 1; }
         else if (found){
             // Si le fichier est dans le dossier ET qu'il est pas (dans) un sous-dossier
-            if (strncmp(path, buffer[0], size) && isnotsubdir(&buffer[size])) {
+            if (strncmp(path, &buffer[0], size) && isnotsubdir(&buffer[size])) {
                 // Si file
-                if (buffer[156] == 0 || buffer[156] == '\0'){ strcpy(entries[found], buffer[0]); }
+                if (buffer[156] == 0 || buffer[156] == '\0'){ strcpy(entries[found], &buffer[0]); }
                 // Si symlink
-                else if (buffer[156] == 1){ strcpy(entries[found], buffer[157]); }
+                else if (buffer[156] == 1){ strcpy(entries[found], &buffer[157]); }
                 found++;
             }
             // Sinon c'est qu'on a finit de parcourir les dossiers
@@ -266,10 +259,5 @@ int list(int tar_fd, char *path, char **entries, size_t *no_entries) {
  *
  */
 ssize_t read_file(int tar_fd, char *path, size_t offset, uint8_t *dest, size_t *len) {
-    return 0;
-}
-
-
-int main() {
     return 0;
 }

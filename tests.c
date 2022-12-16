@@ -36,10 +36,14 @@ int main(int argc, char **argv) {
         return -1;
     }
 
-    //int ret = check_archive(fd);
-    //printf("check_archive returned %d\n", ret);
-    int res = exists(fd, "Makefile");
-    printf("exists returned %d\n", res);
+    int ret = check_archive(fd);
+    printf("check_archive returned %d\n", ret);
+    int exst = exists(fd, "lib_tar.h");
+    if (exst) {
+        printf("Exists : found !\n");
+    } else {
+        printf("Exists : not found :(\n");
+    }
 
     return 0;
 }
