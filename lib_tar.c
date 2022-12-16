@@ -67,6 +67,11 @@ unsigned long hash(char *str) { // found on https://stackoverflow.com/questions/
     return hash;
 }
 
+int ceilC(double val){
+    if (val / (int) val != 1){ val++; }
+    return (int) val;
+}
+
 /**
  * Checks whether an entry exists in the archive.
  *
@@ -108,6 +113,30 @@ int exists(int tar_fd, char *path) {
     return flag;
 }
 
+int check_is(int tar_fd, char *path, int type){
+    char buffer[512]; // because it is structured by blocks of 512 bytes !
+    uint16_t blockskip;
+    int err;
+
+    int end = 0;
+    int found;
+    while (!end){
+        err = read(tar_fd, buffer, 512);
+        if (err == 0){ end = 1; }
+        
+        if (strcmp(path, buffer[0]) == 0) {
+            if (buffer[156] == type || (type == 0 && buffer[156] == '\0')) { return 1; }
+            return 0;
+        }
+
+        // Get blockskip
+        blockskip = ceilC((double) strtol(&buffer[124], NULL, 8) / 512.);
+        lseek(tar_fd, (off_t)blockskip*512, SEEK_CUR);
+    }
+
+    return 0;
+}
+
 /**
  * Checks whether an entry exists in the archive and is a directory.
  *
@@ -118,8 +147,7 @@ int exists(int tar_fd, char *path) {
  *         any other value otherwise.
  */
 int is_dir(int tar_fd, char *path) {
-    DIR *dir = opendir(path);
-    return (exists(tar_fd, path) == 1 && dir) ? 1 : 0;
+    return check_is(tar_fd, path, 5);
 }
 
 /**
@@ -132,7 +160,7 @@ int is_dir(int tar_fd, char *path) {
  *         any other value otherwise.
  */
 int is_file(int tar_fd, char *path) {
-    return (exists(tar_fd, path) == 1) && (access(path, F_OK) == 0) ? 1 : 0;
+    return check_is(tar_fd, path, 0);
 }
 
 /**
@@ -144,9 +172,19 @@ int is_file(int tar_fd, char *path) {
  *         any other value otherwise.
  */
 int is_symlink(int tar_fd, char *path) {
-    return 0; // little adaptation of exists()
+    return check_is(tar_fd, path, 1);
 }
 
+
+// return 0 if it is a subdir, 1 if not
+int isnotsubdir(char *filename){
+    int i=0;
+    while(filename[i] != '\0'){
+        if (filename[i] == "/"){ return 0; }
+        i++;
+    }
+    return 1;
+}
 
 /**
  * Lists the entries at a given path in the archive.
@@ -171,7 +209,42 @@ int is_symlink(int tar_fd, char *path) {
  *         any other value otherwise.
  */
 int list(int tar_fd, char *path, char **entries, size_t *no_entries) {
-    return 0;
+    char buffer[512]; // because it is structured by blocks of 512 bytes !
+    uint16_t blockskip;
+    int err;
+
+    int size = strlen(path);
+
+    int count = 0;
+    size_t found = 0;
+    while (1){
+        err = read(tar_fd, buffer, 512);
+        if (err == 0){ return 0; }
+        
+        if (strcmp(path, buffer[0]) == 0) { found = 1; }
+        else if (found){
+            // Si le fichier est dans le dossier ET qu'il est pas (dans) un sous-dossier
+            if (strncmp(path, buffer[0], size) && isnotsubdir(&buffer[size])) {
+                // Si file
+                if (buffer[156] == 0 || buffer[156] == '\0'){ strcpy(entries[found], buffer[0]); }
+                // Si symlink
+                else if (buffer[156] == 1){ strcpy(entries[found], buffer[157]); }
+                found++;
+            }
+            // Sinon c'est qu'on a finit de parcourir les dossiers
+            else {
+                *no_entries = found;
+                return 1; 
+            }
+        }
+
+        // next file
+        blockskip = ceilC((double) strtol(&buffer[124], NULL, 8) / 512.);
+        lseek(tar_fd, (off_t)blockskip*512, SEEK_CUR);
+    }
+
+    *no_entries = found;
+    return found;
 }
 
 /**
@@ -195,6 +268,7 @@ int list(int tar_fd, char *path, char **entries, size_t *no_entries) {
 ssize_t read_file(int tar_fd, char *path, size_t offset, uint8_t *dest, size_t *len) {
     return 0;
 }
+
 
 int main() {
     return 0;
