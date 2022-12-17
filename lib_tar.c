@@ -8,9 +8,11 @@
 #include <dirent.h>
 
 int ceilC(double val){
+    if (val == 0.) {return 0;}
     if (val / (int) val != 1){ val++; }
     return (int) val;
 }
+
 
 unsigned long hash(char *str) {
     char *ptr = &str[0];
@@ -22,9 +24,11 @@ unsigned long hash(char *str) {
     return hash;
 }
 
+
 void reset(int tar_fd) {
     lseek(tar_fd, 0, SEEK_SET);
 }
+
 
 /**
  * Checks whether the archive is valid.
@@ -55,8 +59,8 @@ int check_archive(int tar_fd) {
         if (err == -1) { reset(tar_fd); return -4; } // error on reading
         if (err < 512 && err > -1) { reset(tar_fd); return nb_headers; } // end of the file
         if (buffer[0] == 0) {reset(tar_fd); return nb_headers;}
-        if (strcmp(&buffer[257], TMAGIC)) {reset(tar_fd); return -1;} // check magic value
-        if (strncmp(&buffer[263], "00", 2)) {reset(tar_fd); return -2;}
+        if (strncmp(&buffer[257], TMAGIC, TMAGLEN)) {reset(tar_fd); return -1;} // check magic value
+        if (strncmp(&buffer[263], TVERSION, TVERSLEN)) {reset(tar_fd); return -2;}
 
         nb_headers++;
 
@@ -75,7 +79,6 @@ int check_archive(int tar_fd) {
         lseek(tar_fd, (off_t) blocks_skip * 512, SEEK_CUR);
     }
 }
-
 
 
 /**
@@ -97,7 +100,7 @@ int exists(int tar_fd, char *path) {
     while(1) {
         err = read(tar_fd, buffer, 512);
         if (err == -1) {reset(tar_fd); return -1; } // error on reading
-        if (buffer[0] == '0') {reset(tar_fd); return 0;}
+        if (buffer[0] == '\0') {reset(tar_fd); return 0;}
         if (err < 512 && err > -1) { reset(tar_fd); return 0; } // end of the file
 
         current_name = hash(&buffer[0]);
@@ -107,29 +110,6 @@ int exists(int tar_fd, char *path) {
     }
 }
 
-
-int check_is(int tar_fd, char *path, int type){
-    char buffer[512]; // because it is structured by blocks of 512 bytes !
-    uint16_t blockskip;
-    int err;
-
-    int end = 0;
-    while (!end){
-        err = read(tar_fd, buffer, 512);
-        if (err == 0){ end = 1; }
-        
-        if (strcmp(path, &buffer[0]) == 0) {
-            if (buffer[156] == type || (type == 0 && buffer[156] == '\0')) { return 1; }
-            return 0;
-        }
-
-        // Get blockskip
-        blockskip = ceilC((double) strtol(&buffer[124], NULL, 8) / 512.);
-        lseek(tar_fd, (off_t)blockskip*512, SEEK_CUR);
-    }
-
-    return 0;
-}
 
 /**
  * Checks whether an entry exists in the archive and is a directory.
@@ -141,8 +121,25 @@ int check_is(int tar_fd, char *path, int type){
  *         any other value otherwise.
  */
 int is_dir(int tar_fd, char *path) {
-    return check_is(tar_fd, path, 5);
+    unsigned long path_name = hash(path);
+    unsigned long current_name;
+    char buffer[512];
+    int err;
+    int blocks_skip;
+
+    while(1) {
+        err = read(tar_fd, buffer, 512);
+        if (err == -1) {reset(tar_fd); return -1; } // error on reading
+        if (buffer[0] == '\0') {reset(tar_fd); return 0;}
+        if (err < 512 && err > -1) { reset(tar_fd); return 0; } // end of the file
+
+        current_name = hash(&buffer[0]);
+        if (current_name == path_name && buffer[156] == DIRTYPE) {reset(tar_fd); return 1;}
+        blocks_skip = ceilC(strtol(&buffer[124], NULL, 8) / 512.);
+        lseek(tar_fd, (off_t) blocks_skip * 512, SEEK_CUR);
+    };
 }
+
 
 /**
  * Checks whether an entry exists in the archive and is a file.
@@ -154,8 +151,25 @@ int is_dir(int tar_fd, char *path) {
  *         any other value otherwise.
  */
 int is_file(int tar_fd, char *path) {
-    return check_is(tar_fd, path, 0);
+    unsigned long path_name = hash(path);
+    unsigned long current_name;
+    char buffer[512];
+    int err;
+    int blocks_skip;
+
+    while(1) {
+        err = read(tar_fd, buffer, 512);
+        if (err == -1) {reset(tar_fd); return -1; } // error on reading
+        if (buffer[0] == '\0') {reset(tar_fd); return 0;}
+        if (err < 512 && err > -1) { reset(tar_fd); return 0; } // end of the file
+
+        current_name = hash(&buffer[0]);
+        if (current_name == path_name && (buffer[156] == REGTYPE || buffer[156] == AREGTYPE)) {reset(tar_fd); return 1;}
+        blocks_skip = ceilC(strtol(&buffer[124], NULL, 8) / 512.);
+        lseek(tar_fd, (off_t) blocks_skip * 512, SEEK_CUR);
+    };
 }
+
 
 /**
  * Checks whether an entry exists in the archive and is a symlink.
@@ -166,7 +180,23 @@ int is_file(int tar_fd, char *path) {
  *         any other value otherwise.
  */
 int is_symlink(int tar_fd, char *path) {
-    return check_is(tar_fd, path, 1);
+    unsigned long path_name = hash(path);
+    unsigned long current_name;
+    char buffer[512];
+    int err;
+    int blocks_skip;
+
+    while(1) {
+        err = read(tar_fd, buffer, 512);
+        if (err == -1) {reset(tar_fd); return -1; } // error on reading
+        if (buffer[0] == '\0') {reset(tar_fd); return 0;}
+        if (err < 512 && err > -1) { reset(tar_fd); return 0; } // end of the file
+
+        current_name = hash(&buffer[0]);
+        if (current_name == path_name && buffer[156] == SYMTYPE) {reset(tar_fd); return 1;} // replace by '1' for hard link
+        blocks_skip = ceilC(strtol(&buffer[124], NULL, 8) / 512.);
+        lseek(tar_fd, (off_t) blocks_skip * 512, SEEK_CUR);
+    };
 }
 
 
@@ -219,9 +249,9 @@ int list(int tar_fd, char *path, char **entries, size_t *no_entries) {
             // Si le fichier est dans le dossier ET qu'il est pas (dans) un sous-dossier
             if (strncmp(path, &buffer[0], size) && isnotsubdir(&buffer[size])) {
                 // Si file
-                if (buffer[156] == 0 || buffer[156] == '\0'){ strcpy(entries[found], &buffer[0]); }
+                if (buffer[156] == REGTYPE || buffer[156] == AREGTYPE){ strcpy(entries[found], &buffer[0]); }
                 // Si symlink
-                else if (buffer[156] == 1){ strcpy(entries[found], &buffer[157]); }
+                else if (buffer[156] == SYMTYPE){ strcpy(entries[found], &buffer[157]); } // tu avais mit '1', ça c'est les hardlink, c'est 2 pour les symlink
                 found++;
             }
             // Sinon c'est qu'on a finit de parcourir les dossiers
@@ -258,6 +288,47 @@ int list(int tar_fd, char *path, char **entries, size_t *no_entries) {
  *         the end of the file.
  *
  */
-ssize_t read_file(int tar_fd, char *path, size_t offset, uint8_t *dest, size_t *len) {
-    return 0;
+ssize_t read_file(int tar_fd, char *path, size_t offset, uint8_t *dest, size_t *len) { // todo : if sym
+    unsigned long path_name = hash(path);
+    unsigned long current_name;
+    char buffer[512];
+    int err;
+    int size;
+    int blocks_skip;
+    int out;
+
+    while(1) {
+        err = read(tar_fd, buffer, 512);
+        if (err == -1) {reset(tar_fd); return -3; } // error on reading
+        if (buffer[0] == '\0') {reset(tar_fd); *len = 0; return -1;}
+        if (err < 512 && err > -1) {reset(tar_fd); *len = 0; return -1; } // end of the file
+
+        current_name = hash(&buffer[0]);
+        size = strtol(&buffer[124], NULL, 8);
+        if (current_name == path_name && (
+            buffer[156] == REGTYPE ||
+            buffer[156] == AREGTYPE ||
+            buffer[156] == SYMTYPE
+        )) {
+
+            if (buffer[156] == SYMTYPE) {
+                printf("Sym link detected !\n");
+                reset(tar_fd);
+                return read_file(tar_fd, &buffer[157], offset, dest, len);
+            }
+
+            if (offset >= size) {reset(tar_fd); *len = 0; return -2;}
+            out = *len < size ? size - (*len + offset) : 0;
+            out = out < 1 ? 0 : out;
+
+            *len  = offset + *len > size ? size - offset : *len;
+            lseek(tar_fd, (off_t) offset, SEEK_CUR); // start at the offset
+            *len = read(tar_fd, dest, *len); // put bytes in dest
+
+            reset(tar_fd);
+            return out;
+        }
+        blocks_skip = ceilC(size / 512.);
+        lseek(tar_fd, (off_t) blocks_skip * 512, SEEK_CUR);
+    }
 }
