@@ -253,8 +253,8 @@ int list(int tar_fd, char *path, char **entries, size_t *no_entries) {
             *no_entries = found;
             return found; }
         
-        // Si le fichier est (dans) le dossier
-        if (!strncmp(path, &buffer[0], size)){
+        // Si le fichier est DANS le dossier
+        if (!strncmp(path, &buffer[0], size) && strcmp(path, &buffer[0])){
             // Si le fichier n'est pas DANS un sous-dossier
             if (notinsubdir(&buffer[size])) {
                 // Si symlink

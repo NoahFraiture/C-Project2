@@ -61,7 +61,7 @@ int main(int argc, char **argv) {
 
     size_t no_entries1 = 10;
     char *entries[10]; for (int i=0; i<10; i++){ entries[i] = malloc(sizeof(char)*100);}
-    int listresult1 = list(fd, "", (char **)entries, &no_entries1);
+    int listresult1 = list(fd, "coucoucfolder/", (char **)entries, &no_entries1);
     if (listresult1) {
         printf("List well built ! (%d)\n", (int)no_entries1);
         for (size_t en=0; en<no_entries1; en++){
@@ -74,7 +74,7 @@ int main(int argc, char **argv) {
     if (!listresult2) {printf("List well not built !\n");} else {
         printf("List wrongly built (%d) :(\n", (int) no_entries2);
         for (size_t en=0; en<no_entries2; en++){
-            printf("%s\n", entries[en]);
+            printf("--> %s\n", entries[en]);
         }
     }
     
