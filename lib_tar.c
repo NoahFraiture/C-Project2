@@ -201,10 +201,10 @@ int is_symlink(int tar_fd, char *path) {
 
 
 // return 0 if it is a subdir, 1 if not
-int isnotsubdir(char *filename){
+int notinsubdir(char *filename){
     int i=0;
     while(filename[i] != '\0'){
-        if (filename[i] == '/'){ return 0; }
+        if (filename[i] == '/' && filename[i+1] != '\0'){ return 0; }
         i++;
     }
     return 1;
@@ -234,40 +234,51 @@ int isnotsubdir(char *filename){
  */
 int list(int tar_fd, char *path, char **entries, size_t *no_entries) {
     char buffer[512]; // because it is structured by blocks of 512 bytes !
-    uint16_t blockskip;
+    uint16_t blocks_skip;
+    size_t max = *no_entries;
+    int size = strlen(path);
     int err;
 
-    int size = strlen(path);
-
     size_t found = 0;
-    while (1){
+    while (max > found){
         err = read(tar_fd, buffer, 512);
-        if (err == 0){ return 0; }
+        if (err == -1){ printf("Error while reading\n"); return 0; }
+        // end of the file
+        if (buffer[0] == '\0') {
+            reset(tar_fd); 
+            *no_entries = found;
+            return found; }
+        if (err < 512 && err > -1) { 
+            reset(tar_fd);
+            *no_entries = found;
+            return found; }
         
-        if (strcmp(path, &buffer[0]) == 0) { found = 1; }
-        else if (found){
-            // Si le fichier est dans le dossier ET qu'il est pas (dans) un sous-dossier
-            if (strncmp(path, &buffer[0], size) && isnotsubdir(&buffer[size])) {
-                // Si file
-                if (buffer[156] == REGTYPE || buffer[156] == AREGTYPE){ strcpy(entries[found], &buffer[0]); }
+        // Si le fichier est (dans) le dossier
+        if (!strncmp(path, &buffer[0], size)){
+            // Si le fichier n'est pas DANS un sous-dossier
+            if (notinsubdir(&buffer[size])) {
                 // Si symlink
-                else if (buffer[156] == SYMTYPE){ strcpy(entries[found], &buffer[157]); } // tu avais mit '1', ça c'est les hardlink, c'est 2 pour les symlink
+                if (buffer[156] == SYMTYPE){
+                    strncpy(entries[found], &buffer[157], 100); }
+                // Si file ou whatever
+                else { strncpy(entries[found], &buffer[0], 100); }
+                // Anyway
                 found++;
             }
-            // Sinon c'est qu'on a finit de parcourir les dossiers
-            else {
-                *no_entries = found;
-                return 1; 
-            }
+        }
+        // Si quelque chose a été copié, c'est qu'on a finit de parcourir les fichiers intéressants
+        else if (found > 0) {
+            *no_entries = found;
+            return 1;
         }
 
         // next file
-        blockskip = ceilC((double) strtol(&buffer[124], NULL, 8) / 512.);
-        lseek(tar_fd, (off_t)blockskip*512, SEEK_CUR);
+        blocks_skip = ceilC(strtol(&buffer[124], NULL, 8) / 512.);
+        lseek(tar_fd, (off_t) blocks_skip * 512, SEEK_CUR);
     }
 
     *no_entries = found;
-    return found;
+    return 1;
 }
 
 /**

@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -51,12 +52,31 @@ int main(int argc, char **argv) {
 
     int folder1 = is_dir(fd, "lib_tar.h");
     if (!folder1) {printf("Folder well not detected !\n");} else {printf("Folder wrongly detected :(\n");}
-    int folder2 = is_dir(fd, "folder/");
+    int folder2 = is_dir(fd, "test_yey/");
     if (folder2) {printf("Folder well detected !\n");} else {printf("Folder not detected :(\n");}
     int symfile1 = is_symlink(fd, "lib_link.c");
     if (symfile1) {printf("Link well detected !\n");} else {printf("Link not detected :(\n");}
     int symfile2 = is_symlink(fd, "lib_tar.h");
     if (!symfile2) {printf("Link well not detected !\n");} else {printf("Link wrongly detected :(\n");}
+
+    size_t no_entries1 = 10;
+    char *entries[10]; for (int i=0; i<10; i++){ entries[i] = malloc(sizeof(char)*100);}
+    int listresult1 = list(fd, "", (char **)entries, &no_entries1);
+    if (listresult1) {
+        printf("List well built ! (%d)\n", (int)no_entries1);
+        for (size_t en=0; en<no_entries1; en++){
+            printf("--> %s\n", entries[en]);
+        }
+    } else {printf("List not built :(\n");}
+
+    size_t no_entries2 = 10;
+    int listresult2 = list(fd, "notarealdir/", (char **)entries, &no_entries2);
+    if (!listresult2) {printf("List well not built !\n");} else {
+        printf("List wrongly built (%d) :(\n", (int) no_entries2);
+        for (size_t en=0; en<no_entries2; en++){
+            printf("%s\n", entries[en]);
+        }
+    }
     
     printf("\n");
     char *path = "folder/bidu.txt";
