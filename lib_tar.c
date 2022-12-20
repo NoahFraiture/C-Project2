@@ -202,11 +202,20 @@ int is_symlink(int tar_fd, char *path) {
 
 // return 0 if it is a subdir, 1 if not
 int notinsubdir(char *filename){
-    int i=0;
+    int i=1; // On est certains qu'il y a au moins 1 char => (si "dir" : c'est un "/" qu'il faut ignorer) || (si "dir/": c'est un char normal, osef)
     while(filename[i] != '\0'){
         if (filename[i] == '/' && filename[i+1] != '\0'){ return 0; }
         i++;
     }
+    return 1;
+}
+
+int indirbutnotdir(char *real_name, char *current_name, size_t size_real){
+    size_t i=0;
+    for (; i<size_real; i++){
+        if (current_name[i] != real_name[i]){ return 0; }
+    }
+    if (current_name[i] == '\0' || (current_name[i] == '/' && current_name[i+1] == '\0')){ return 0; }
     return 1;
 }
 
@@ -234,18 +243,21 @@ int notinsubdir(char *filename){
  */
 int list(int tar_fd, char *path, char **entries, size_t *no_entries) {
     char buffer[512]; // because it is structured by blocks of 512 bytes !
+    char real_name[100]; // au cas où c'est un symlink
+    strncpy(real_name, path, 100);
+    size_t size = strlen(real_name);
+
     uint16_t blocks_skip;
     size_t max = *no_entries;
-    int size = strlen(path);
     int err;
 
     size_t found = 0;
-    while (max > found){
+    while (found < max){
         err = read(tar_fd, buffer, 512);
         if (err == -1){ printf("Error while reading\n"); return 0; }
         // end of the file
         if (buffer[0] == '\0') {
-            reset(tar_fd); 
+            reset(tar_fd);
             *no_entries = found;
             return found; }
         if (err < 512 && err > -1) { 
@@ -253,21 +265,23 @@ int list(int tar_fd, char *path, char **entries, size_t *no_entries) {
             *no_entries = found;
             return found; }
         
-        // Si le fichier est DANS le dossier
-        if (!strncmp(path, &buffer[0], size) && strcmp(path, &buffer[0])){
-            // Si le fichier n'est pas DANS un sous-dossier
+        // Si le dossier recherché est un symlink
+        if (!strcmp(real_name, &buffer[0]) && buffer[156] == SYMTYPE){
+            strncpy(real_name, &buffer[157], 100);
+            size = strlen(real_name);
+            reset(tar_fd);
+        }
+        // Si le fichier est DANS le dossier et n'est pas le dossier
+        else if (indirbutnotdir(real_name, &buffer[0], size)){
+            // Si le fichier n'est pas DANS un sous-dossier (peu importe le type de fichier, on copie son nom et wala)
             if (notinsubdir(&buffer[size])) {
-                // Si symlink
-                if (buffer[156] == SYMTYPE){
-                    strncpy(entries[found], &buffer[157], 100); }
-                // Si file ou whatever
-                else { strncpy(entries[found], &buffer[0], 100); }
-                // Anyway
+                strncpy(entries[found], &buffer[0], 100);
                 found++;
             }
         }
         // Si quelque chose a été copié, c'est qu'on a finit de parcourir les fichiers intéressants
         else if (found > 0) {
+            reset(tar_fd);
             *no_entries = found;
             return 1;
         }
@@ -277,6 +291,7 @@ int list(int tar_fd, char *path, char **entries, size_t *no_entries) {
         lseek(tar_fd, (off_t) blocks_skip * 512, SEEK_CUR);
     }
 
+    reset(tar_fd);
     *no_entries = found;
     return 1;
 }
